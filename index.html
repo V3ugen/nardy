@@ -2,6 +2,8 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <!-- Мета-тег viewport обязателен, чтобы сайт не масштабировался и не дергался на смартфонах -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Нарды на Babylon.js</title>
     <style>
         html, body {
@@ -10,102 +12,147 @@
             height: 100%;
             margin: 0;
             padding: 0;
-            background-color: #111;
+            background-color: #1a1a1a;
+            /* Отключаем стандартные жесты браузера (скролл, зум лупой), чтобы они не мешали игре */
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
         #renderCanvas {
             width: 100%;
             height: 100%;
-            touch-action: none;
             display: block;
         }
-        #error-msg {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: red;
-            background: rgba(0,0,0,0.8);
-            padding: 10px;
-            font-family: sans-serif;
-            display: none;
-            z-index: 100;
-        }
     </style>
-    <!-- Используем зеркало cdnjs для надежности -->
-   <script src="babylon.js"></script>
-
-
+    <!-- Подключение библиотеки -->
+    <script src="https://babylonjs.com"></script>
 </head>
 <body>
-    <div id="error-msg"></div>
     <canvas id="renderCanvas"></canvas>
 
     <script>
-        // Функция для вывода ошибок на экран
-        function showError(text) {
-            const el = document.getElementById("error-msg");
-            el.style.display = "block";
-            el.innerHTML += text + "<br>";
-        }
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
 
-        // Проверяем, загрузился ли Babylon
-        if (typeof BABYLON === 'undefined') {
-            showError("Ошибка: Библиотека Babylon.js не загрузилась. Проверьте подключение к интернету или замените ссылку на скрипт.");
-        } else {
-            const canvas = document.getElementById("renderCanvas");
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.1, 0.1, 0.1, 1);
+
+            // 1. Камера — ArcRotateCamera идеально подходит для мобилок (поворот двумя пальцами, зум щипком)
+            const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 3, 20, BABYLON.Vector3.Zero(), scene);
+            camera.attachControl(canvas, true);
+            camera.lowerRadiusLimit = 10;
+            camera.upperRadiusLimit = 25;
+            camera.upperBetaLimit = Math.PI / 2.2; // Ограничиваем камеру, чтобы нельзя было заглянуть под стол
+
+            // 2. Освещение
+            const hemiLight = new BABYLON.HemisphericLight("hemiLight", new BABYLON.Vector3(0, 1, 0), scene);
+            hemiLight.intensity = 0.6;
+
+            const dirLight = new BABYLON.DirectionalLight("dirLight", new BABYLON.Vector3(-1, -2, -1), scene);
+            dirLight.position = new BABYLON.Vector3(10, 20, 10);
+            dirLight.intensity = 0.5;
+
+            // 3. Материалы
+            const boardMaterial = new BABYLON.StandardMaterial("boardMat", scene);
+            boardMaterial.diffuseColor = new BABYLON.Color3(0.45, 0.25, 0.12);
+
+            const whiteMat = new BABYLON.StandardMaterial("whiteMat", scene);
+            whiteMat.diffuseColor = new BABYLON.Color3(0.9, 0.9, 0.85);
+
+            const blackMat = new BABYLON.StandardMaterial("blackMat", scene);
+            blackMat.diffuseColor = new BABYLON.Color3(0.15, 0.15, 0.15);
+
+            // 4. Игровое поле
+            const board = BABYLON.MeshBuilder.CreateBox("board", { width: 12, height: 0.5, depth: 14 }, scene);
+            board.material = boardMaterial;
+
+            const bar = BABYLON.MeshBuilder.CreateBox("bar", { width: 0.8, height: 0.7, depth: 14 }, scene);
+            bar.position.y = 0.1;
+            bar.material = boardMaterial;
+
+            // 5. Автоматическая расстановка всех 30 шашек по классическим правилам (Короткие нарды)
+            const checkers = [];
             
-            // Проверяем поддержку WebGL
-            if (!BABYLON.Engine.isSupported()) {
-                showError("Ошибка: Ваш браузер не поддерживает WebGL.");
-            } else {
-                try {
-                    const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
-
-                    const createScene = function () {
-                        const scene = new BABYLON.Scene(engine);
-                        scene.clearColor = new BABYLON.Color4(0.1, 0.1, 0.1, 1);
-
-                        // Камера
-                        const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 3, 20, BABYLON.Vector3.Zero(), scene);
-                        camera.attachControl(canvas, true);
-
-                        // Свет
-                        const hemiLight = new BABYLON.HemisphericLight("hemiLight", new BABYLON.Vector3(0, 1, 0), scene);
-                        hemiLight.intensity = 0.7;
-
-                        // Материал доски
-                        const boardMaterial = new BABYLON.StandardMaterial("boardMat", scene);
-                        boardMaterial.diffuseColor = new BABYLON.Color3(0.5, 0.25, 0.1);
-
-                        // Доска
-                        const board = BABYLON.MeshBuilder.CreateBox("board", { width: 12, height: 0.5, depth: 14 }, scene);
-                        board.material = boardMaterial;
-
-                        // Тестовая шашка (белая)
-                        const whiteMat = new BABYLON.StandardMaterial("whiteMat", scene);
-                        whiteMat.diffuseColor = new BABYLON.Color3(0.9, 0.9, 0.9);
-                        
-                        const checker = BABYLON.MeshBuilder.CreateCylinder("checker", { diameter: 0.8, height: 0.3 }, scene);
-                        checker.position = new BABYLON.Vector3(-3, 0.4, -3);
-                        checker.material = whiteMat;
-
-                        return scene;
-                    };
-
-                    const scene = createScene();
-
-                    engine.runRenderLoop(function () {
-                        scene.render();
-                    });
-
-                    window.addEventListener("resize", function () {
-                        engine.resize();
-                    });
-
-                } catch (e) {
-                    showError("Критическая ошибка при инициализации сцены: " + e.message);
+            function spawnStack(count, x, z, material, team, direction) {
+                for (let i = 0; i < count; i++) {
+                    const name = `${team === 1 ? "white" : "black"}_x${x}_z${z}_${i}`;
+                    const checker = BABYLON.MeshBuilder.CreateCylinder(name, { diameter: 0.8, height: 0.3, tessellation: 24 }, scene);
+                    
+                    // Выстраиваем шашки в ряд (вдоль оси Z). direction регулирует, идут они вверх или вниз поля
+                    checker.position = new BABYLON.Vector3(x, 0.4, z + (i * 0.9 * direction));
+                    checker.material = material;
+                    checker.metadata = { team: team, isChecker: true };
+                    checkers.push(checker);
                 }
             }
-        }
+
+            // Координаты лунок по осям X и Z (учитывая перегородку-бар)
+            // Левая половина: X = -4.5, Правая половина: X = 4.5. Промежуточные лунки смещаются к центру.
+            const xCoords = [-5.2, -4.3, -3.4, -2.5, -1.6, -0.7,  0.7, 1.6, 2.5, 3.4, 4.3, 5.2];
+
+            // Расстановка Белых (Team 1)
+            spawnStack(2,  xCoords[0],  -5.8, whiteMat, 1,  1);  // 1 пункт (2 шашки)
+            spawnStack(5,  xCoords[11], -5.8, whiteMat, 1,  1);  // 12 пункт (5 шашек)
+            spawnStack(3,  xCoords[4],   5.8, whiteMat, 1, -1);  // 17 пункт (3 шашки)
+            spawnStack(5,  xCoords[6],   5.8, whiteMat, 1, -1);  // 19 пункт (5 шашек)
+
+            // Расстановка Черных (Team 2)
+            spawnStack(2,  xCoords[0],   5.8, blackMat, 2, -1);  // 24 пункт (2 шашки)
+            spawnStack(5,  xCoords[11],  5.8, blackMat, 2, -1);  // 13 пункт (5 шашек)
+            spawnStack(3,  xCoords[4],  -5.8, blackMat, 2,  1);  // 8 пункт (3 шашки)
+            spawnStack(5,  xCoords[6],  -5.8, blackMat, 2,  1);  // 6 пункт (5 шашек)
+
+            // 6. Логика тач-управления и кликов
+            let selectedChecker = null;
+
+            // Используем onPointerDown — Babylon.js автоматически трансформирует клики мыши и тапы пальцем в единое событие
+            scene.onPointerDown = function (evt, pickResult) {
+                if (pickResult.hit) {
+                    const mesh = pickResult.pickedMesh;
+
+                    // Шаг 1: Выбор шашки (работает и от тапа, и от клика)
+                    if (mesh.metadata && mesh.metadata.isChecker) {
+                        if (selectedChecker) {
+                            selectedChecker.renderOutline = false;
+                        }
+                        
+                        selectedChecker = mesh;
+                        selectedChecker.outlineColor = BABYLON.Color3.Green();
+                        selectedChecker.outlineWidth = 0.04;
+                        selectedChecker.renderOutline = true;
+                    } 
+                    // Шаг 2: Перемещение выбранной шашки на доску в точку нажатия
+                    else if (selectedChecker && (mesh === board || mesh === bar)) {
+                        const targetPoint = pickResult.pickedPoint;
+                        
+                        // Плавная анимация перемещения (отлично смотрится на мобильных телефонах)
+                        BABYLON.Animation.CreateAndStartAnimation(
+                            "moveAnim", selectedChecker, "position", 60, 12, 
+                            selectedChecker.position, 
+                            new BABYLON.Vector3(targetPoint.x, 0.4, targetPoint.z),
+                            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                        );
+
+                        selectedChecker.renderOutline = false;
+                        selectedChecker = null;
+                    }
+                }
+            };
+
+            return scene;
+        };
+
+        const scene = createScene();
+
+        engine.runRenderLoop(function () {
+            scene.render();
+        });
+
+        window.addEventListener("resize", function () {
+            engine.resize();
+        });
     </script>
 </body>
 </html>
