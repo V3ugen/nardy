@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Нарды</title>
+    <style>
+        html, body {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+        }
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+    </style>
+    <!-- Подключаем Babylon.js -->
+    <script src="https://babylonjs.com"></script>
+</head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.1, 0.1, 0.1, 1);
+
+            // 1. Камера (вид сверху под углом, как над настольной игрой)
+            const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 3, 20, BABYLON.Vector3.Zero(), scene);
+            camera.attachControl(canvas, true);
+            camera.lowerRadiusLimit = 10;
+            camera.upperRadiusLimit = 30;
+
+            // 2. Свет (мягкий заполняющий + направленный для теней)
+            const hemiLight = new BABYLON.HemisphericLight("hemiLight", new BABYLON.Vector3(0, 1, 0), scene);
+            hemiLight.intensity = 0.5;
+
+            const dirLight = new BABYLON.DirectionalLight("dirLight", new BABYLON.Vector3(-1, -2, -1), scene);
+            dirLight.position = new BABYLON.Vector3(10, 20, 10);
+            dirLight.intensity = 0.7;
+
+            // 3. Материалы
+            const boardMaterial = new BABYLON.StandardMaterial("boardMat", scene);
+            boardMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.2, 0.08); // Дерево
+
+            const whiteMat = new BABYLON.StandardMaterial("whiteMat", scene);
+            whiteMat.diffuseColor = new BABYLON.Color3(0.9, 0.9, 0.85);
+            whiteMat.roughness = 0.2;
+
+            const blackMat = new BABYLON.StandardMaterial("blackMat", scene);
+            blackMat.diffuseColor = new BABYLON.Color3(0.15, 0.15, 0.15);
+            blackMat.roughness = 0.2;
+
+            // 4. Создание игрового поля (Имитация доски нард)
+            const board = BABYLON.MeshBuilder.CreateBox("board", { width: 12, height: 0.5, depth: 14 }, scene);
+            board.material = boardMaterial;
+
+            // Перегородка посредине (бар)
+            const bar = BABYLON.MeshBuilder.CreateBox("bar", { width: 0.8, height: 0.7, depth: 14 }, scene);
+            bar.position.y = 0.1;
+            bar.material = boardMaterial;
+
+            // 5. Функция генерации шашек
+            const checkers = [];
+            function createChecker(name, x, z, material, team) {
+                const checker = BABYLON.MeshBuilder.CreateCylinder(name, { diameter: 0.8, height: 0.3, tessellation: 32 }, scene);
+                checker.position = new BABYLON.Vector3(x, 0.4, z);
+                checker.material = material;
+                
+                // Записываем метаданные для логики ходов
+                checker.metadata = { team: team, isChecker: true };
+                checkers.push(checker);
+            }
+
+            // Расставляем стартовые шашки (для примера — по одной группе с каждой стороны)
+            // Белые шашки (Team 1)
+            for(let i = 0; i < 5; i++) {
+                createChecker(`white_${i}`, -4.5, -5.5 + (i * 0.9), whiteMat, 1);
+            }
+            // Черные шашки (Team 2)
+            for(let i = 0; i < 5; i++) {
+                createChecker(`black_${i}`, 4.5, 5.5 - (i * 0.9), blackMat, 2);
+            }
+
+            // 6. Создание кубиков (Заглушки, которые можно вращать)
+            const dice1 = BABYLON.MeshBuilder.CreateBox("dice1", { size: 0.6 }, scene);
+            dice1.position = new BABYLON.Vector3(-2, 0.6, 0);
+            dice1.material = whiteMat;
+
+            const dice2 = BABYLON.MeshBuilder.CreateBox("dice2", { size: 0.6 }, scene);
+            dice2.position = new BABYLON.Vector3(2, 0.6, 0);
+            dice2.material = whiteMat;
+
+            // 7. Логика выделения и перемещения мышкой (Pointer Events)
+            let selectedChecker = null;
+
+            scene.onPointerDown = function (evt, pickResult) {
+                if (pickResult.hit) {
+                    const mesh = pickResult.pickedMesh;
+
+                    // Если кликнули по шашке
+                    if (mesh.metadata && mesh.metadata.isChecker) {
+                        // Сброс предыдущего выделения
+                        if (selectedChecker) {
+                            selectedChecker.renderOutline = false;
+                        }
+                        
+                        selectedChecker = mesh;
+                        selectedChecker.outlineColor = BABYLON.Color3.Green();
+                        selectedChecker.outlineWidth = 0.05;
+                        selectedChecker.renderOutline = true;
+                        
+                        console.log(`Выбрана шашка: ${mesh.name}, команда: ${mesh.metadata.team}`);
+                    } 
+                    // Если шашка выбрана и мы кликаем по доске — перемещаем её туда
+                    else if (selectedChecker && (mesh === board || mesh === bar)) {
+                        const targetPoint = pickResult.pickedPoint;
+                        
+                        // Анимируем или просто переносим шашку в точку клика (с фиксацией высоты y)
+                        BABYLON.Animation.CreateAndStartAnimation(
+                            "moveChecker", selectedChecker, "position", 30, 10, 
+                            selectedChecker.position, 
+                            new BABYLON.Vector3(targetPoint.x, 0.4, targetPoint.z),
+                            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                        );
+
+                        selectedChecker.renderOutline = false;
+                        selectedChecker.outlineWidth = 0;
+                        selectedChecker = null;
+                    }
+                }
+            };
+
+            return scene;
+        };
+
+        const scene = createScene();
+
+        engine.runRenderLoop(function () {
+            scene.render();
+        });
+
+        window.addEventListener("resize", function () {
+            engine.resize();
+        });
+    </script>
+</body>
+</html>
